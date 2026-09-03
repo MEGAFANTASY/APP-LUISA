@@ -1,0 +1,54 @@
+# ============ BASES DE DATOS (NO SUBIR) ============
+# Todo lo que esté en db/ se ignora
+db/
+*.db
+*.sqlite
+*.sqlite3
+
+# ============ PYTHON ============
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# ============ DOCKER ============
+# Volumes y archivos temporales
+.docker/
+docker-compose.override.yml
+
+# ============ IDEs ============
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# ============ LOGS ============
+*.log
+logs/
+
+# ============ SECRETOS (si los hay) ============
+.env
+.env.local
+*.pem
+*.key
