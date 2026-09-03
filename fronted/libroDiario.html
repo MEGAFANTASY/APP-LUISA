@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>App Luisa - Libro Diario</title>
+    <link rel="stylesheet" href="estilos.css">
+</head>
+<body>
+    <header>
+        <h1>📒 Libro Diario</h1>
+    </header>
+
+    <nav class="nav-menu">
+        <a href="index.html">🏠 Inicio</a>
+        <a href="cajaMenor.html">💰 Caja Menor</a>
+        <a href="libroDiario.html" class="active">📒 Libro Diario</a>
+        <a href="transportadoras.html">🚚 Transportadoras</a>
+        <a href="averias.html">⚠️ Averías</a>
+        <a href="pagosMensuales.html">💳 Pagos Mensuales</a>
+        <a href="https://script.google.com/macros/s/AKfycbxTNLv-ZJoboN1IybWeSXITP_FkQf6APFFbOMCX3mPMOaBBh2ACbpLBeMOHSbutKLAtYA/exec" target="_blank">✅ Confirmación</a>
+        <button class="btn-sync" id="btnSync" title="Sincronizar con Google Sheets">🔄 Sync</button>
+    </nav>
+
+    <main class="contenido">
+        <!-- FORMULARIO -->
+        <div class="formulario-card">
+            <h2>Nuevo Registro</h2>
+            <form id="formMovimiento">
+                <div class="form-grupo">
+                    <label for="fecha">Fecha</label>
+                    <input type="date" id="fecha" required>
+                </div>
+
+                <div class="form-grupo">
+                    <label for="tipo">Destino</label>
+                    <select id="tipo" required>
+                        <option value="">Seleccionar...</option>
+                        <option value="Personal Flor">🌸 Personal Flor</option>
+                        <option value="Bodega">📦 Bodega</option>
+                    </select>
+                </div>
+
+                <div class="form-grupo">
+                    <label for="descripcion">Descripción</label>
+                    <input type="text" id="descripcion" placeholder="Ej: Compra de mercancía" required>
+                </div>
+
+                <div class="form-grupo">
+                    <label for="monto">Monto</label>
+                    <input type="number" id="monto" placeholder="0" min="0" step="1" required>
+                </div>
+
+                <button type="submit" class="btn-guardar">💾 Guardar</button>
+            </form>
+        </div>
+
+        <!-- TABLA -->
+        <div class="tabla-card">
+            <h2>📋 Registros</h2>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Fecha</th>
+                        <th>Destino</th>
+                        <th>Descripción</th>
+                        <th>Monto</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody id="tablaMovimientos">
+                    <tr><td colspan="5" class="sin-datos">Cargando...</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </main>
+
+    <!-- MODAL EDITAR -->
+    <div class="modal-fondo" id="modalEditarFondo">
+        <div class="modal">
+            <h3>✏️ Editar registro</h3>
+            <div class="form-grupo">
+                <label for="editFecha">Fecha</label>
+                <input type="date" id="editFecha">
+            </div>
+            <div class="form-grupo">
+                <label for="editTipo">Destino</label>
+                <select id="editTipo">
+                    <option value="Personal Flor">🌸 Personal Flor</option>
+                    <option value="Bodega">📦 Bodega</option>
+                </select>
+            </div>
+            <div class="form-grupo">
+                <label for="editDescripcion">Descripción</label>
+                <input type="text" id="editDescripcion">
+            </div>
+            <div class="form-grupo">
+                <label for="editMonto">Monto</label>
+                <input type="number" id="editMonto" min="0" step="1">
+            </div>
+            <div class="modal-botones">
+                <button class="btn-cancelar" id="btnCancelarEdicion">Cancelar</button>
+                <button class="btn-confirmar" id="btnGuardarEdicion">Guardar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL BORRAR -->
+    <div class="modal-fondo" id="modalBorrarFondo">
+        <div class="modal">
+            <h3>🗑️ Borrar registro</h3>
+            <p class="modal-texto-borrar">¿Seguro que quieres borrar este registro?</p>
+            <p class="modal-texto-borrar" id="borrarDescripcion"></p>
+            <div class="modal-botones">
+                <button class="btn-cancelar" id="btnCancelarBorrar">Cancelar</button>
+                <button class="btn-borrar-confirmar" id="btnConfirmarBorrar">Borrar</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="acciones.js"></script>
+    <script src="libroDiario.js"></script>
+</body>
+</html>

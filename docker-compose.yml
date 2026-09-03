@@ -1,0 +1,14 @@
+services:
+  app-luisa:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: app-luisa
+    ports:
+      - "9007:5000"
+    volumes:
+      # Montamos el código para que los cambios se reflejen sin reconstruir
+      - ./backend:/app/backend
+      - ./fronted:/app/fronted
+      - ./db:/app/db
+    restart: unless-stopped
