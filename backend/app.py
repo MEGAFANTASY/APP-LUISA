@@ -7,8 +7,8 @@ import time
 import os
 from datetime import datetime
 
-# Servir archivos estáticos desde la carpeta fronted
-app = Flask(__name__, static_folder="../fronted", static_url_path="")
+# Servir archivos estáticos desde la carpeta fronted (sin static_url_path para controlar rutas manualmente)
+app = Flask(__name__, static_folder="../fronted")
 CORS(app)
 
 # URL por defecto (se puede sobreescribir vía /config o por el body en /test_gs)
@@ -68,13 +68,40 @@ def inicializar_db():
         conn.close()
 
 # ============ SERVIR EL FRONTEND ============
+import os.path
+
 @app.route("/")
 def index():
-    return send_from_directory(app.static_folder, "index.html")
+    return send_from_directory(os.path.join(app.static_folder, "html"), "index.html")
 
 @app.route("/<path:archivo>")
 def archivos_estaticos(archivo):
-    return send_from_directory(app.static_folder, archivo)
+    base_dir = app.static_folder
+    
+    # Extraer solo el nombre del archivo (sin carpetas previas)
+    nombre_archivo = os.path.basename(archivo)
+    
+    # Determinar en qué carpeta buscar según la extensión
+    if nombre_archivo.endswith(".html"):
+        carpeta = "html"
+    elif nombre_archivo.endswith(".css"):
+        carpeta = "css"
+    elif nombre_archivo.endswith(".js"):
+        carpeta = "js"
+    else:
+        carpeta = ""
+    
+    ruta_completa = os.path.join(base_dir, carpeta, nombre_archivo) if carpeta else os.path.join(base_dir, nombre_archivo)
+    
+    # Debug: log en consola
+    print(f"[STATIC] Recibido: {archivo} | Buscando: {ruta_completa}")
+    
+    if os.path.exists(ruta_completa):
+        directorio = os.path.dirname(ruta_completa)
+        nombre_archivo_final = os.path.basename(ruta_completa)
+        return send_from_directory(directorio, nombre_archivo_final)
+    else:
+        return f"Archivo no encontrado: {ruta_completa}", 404
 
 # ============ LEER MOVIMIENTOS (desde SQLite - instantáneo) ============
 @app.route("/leer", methods=["GET"])

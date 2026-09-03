@@ -3,18 +3,18 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>App Luisa - Libro Diario</title>
-    <link rel="stylesheet" href="estilos.css">
+    <title>App Luisa - Caja Menor</title>
+    <link rel="stylesheet" href="../css/estilos.css">
 </head>
 <body>
     <header>
-        <h1>📒 Libro Diario</h1>
+        <h1>💰 Caja Menor</h1>
     </header>
 
     <nav class="nav-menu">
         <a href="index.html">🏠 Inicio</a>
-        <a href="cajaMenor.html">💰 Caja Menor</a>
-        <a href="libroDiario.html" class="active">📒 Libro Diario</a>
+        <a href="cajaMenor.html" class="active">💰 Caja Menor</a>
+        <a href="libroDiario.html">📒 Libro Diario</a>
         <a href="transportadoras.html">🚚 Transportadoras</a>
         <a href="averias.html">⚠️ Averías</a>
         <a href="pagosMensuales.html">💳 Pagos Mensuales</a>
@@ -25,7 +25,7 @@
     <main class="contenido">
         <!-- FORMULARIO -->
         <div class="formulario-card">
-            <h2>Nuevo Registro</h2>
+            <h2>Nuevo Movimiento</h2>
             <form id="formMovimiento">
                 <div class="form-grupo">
                     <label for="fecha">Fecha</label>
@@ -33,17 +33,17 @@
                 </div>
 
                 <div class="form-grupo">
-                    <label for="tipo">Destino</label>
+                    <label for="tipo">Tipo</label>
                     <select id="tipo" required>
                         <option value="">Seleccionar...</option>
-                        <option value="Personal Flor">🌸 Personal Flor</option>
-                        <option value="Bodega">📦 Bodega</option>
+                        <option value="Ingreso">💵 Ingreso</option>
+                        <option value="Salida">💸 Salida</option>
                     </select>
                 </div>
 
                 <div class="form-grupo">
                     <label for="descripcion">Descripción</label>
-                    <input type="text" id="descripcion" placeholder="Ej: Compra de mercancía" required>
+                    <input type="text" id="descripcion" placeholder="Ej: Pago de papelería" required>
                 </div>
 
                 <div class="form-grupo">
@@ -55,14 +55,21 @@
             </form>
         </div>
 
+        <!-- TOTAL -->
+        <div class="total-card">
+            <h2>Total en Caja</h2>
+            <p id="totalCaja" class="total-monto">$0.00</p>
+            <p class="total-detalle">Ingresos − Salidas</p>
+        </div>
+
         <!-- TABLA -->
         <div class="tabla-card">
-            <h2>📋 Registros</h2>
+            <h2>📋 Movimientos</h2>
             <table>
                 <thead>
                     <tr>
                         <th>Fecha</th>
-                        <th>Destino</th>
+                        <th>Tipo</th>
                         <th>Descripción</th>
                         <th>Monto</th>
                         <th></th>
@@ -78,16 +85,16 @@
     <!-- MODAL EDITAR -->
     <div class="modal-fondo" id="modalEditarFondo">
         <div class="modal">
-            <h3>✏️ Editar registro</h3>
+            <h3>✏️ Editar movimiento</h3>
             <div class="form-grupo">
                 <label for="editFecha">Fecha</label>
                 <input type="date" id="editFecha">
             </div>
             <div class="form-grupo">
-                <label for="editTipo">Destino</label>
+                <label for="editTipo">Tipo</label>
                 <select id="editTipo">
-                    <option value="Personal Flor">🌸 Personal Flor</option>
-                    <option value="Bodega">📦 Bodega</option>
+                    <option value="Ingreso">💵 Ingreso</option>
+                    <option value="Salida">💸 Salida</option>
                 </select>
             </div>
             <div class="form-grupo">
@@ -108,7 +115,7 @@
     <!-- MODAL BORRAR -->
     <div class="modal-fondo" id="modalBorrarFondo">
         <div class="modal">
-            <h3>🗑️ Borrar registro</h3>
+            <h3>🗑️ Borrar movimiento</h3>
             <p class="modal-texto-borrar">¿Seguro que quieres borrar este registro?</p>
             <p class="modal-texto-borrar" id="borrarDescripcion"></p>
             <div class="modal-botones">
@@ -118,7 +125,7 @@
         </div>
     </div>
 
-    <script src="acciones.js"></script>
-    <script src="libroDiario.js"></script>
+    <script src="../js/acciones.js"></script>
+    <script src="../js/cajaMenor.js"></script>
 </body>
 </html>
