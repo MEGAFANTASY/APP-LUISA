@@ -23,38 +23,80 @@ MODULOS = {
     "cajaMenor": {
         "db": os.path.join(DB_DIR, "cajaMenor.db"),
         "tabla": "movimientos",
-        "hoja_sheets": "CajaMenor"
+        "hoja_sheets": "CajaMenor",
+        "campos": ["Fecha", "Tipo", "Descripción", "Monto"]
     },
     "libroDiario": {
         "db": os.path.join(DB_DIR, "libroDiario.db"),
         "tabla": "movimientos",
-        "hoja_sheets": "libroDiario"
+        "hoja_sheets": "libroDiario",
+        "campos": ["Fecha", "Tipo", "Descripción", "Monto"]
+    },
+    "averias": {
+        "db": os.path.join(DB_DIR, "averias.db"),
+        "tabla": "averias",
+        "hoja_sheets": "Averias",
+        "campos": ["Fecha", "Vendedor", "Cliente", "Ciudad", "Direccion", "Valor", "Status Bodega", "Status Averias", "Fecha Envio", "Observaciones"]
     }
+}
+
+# Esquema de tablas por módulo
+ESQUEMAS = {
+    "movimientos": """
+        CREATE TABLE IF NOT EXISTS movimientos (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            fecha TEXT NOT NULL,
+            tipo TEXT NOT NULL,
+            descripcion TEXT NOT NULL,
+            monto INTEGER NOT NULL,
+            sincronizado INTEGER DEFAULT 0,
+            borrado INTEGER DEFAULT 0,
+            creado_en TEXT DEFAULT CURRENT_TIMESTAMP
+        )
+    """,
+    "averias": """
+        CREATE TABLE IF NOT EXISTS averias (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            fecha TEXT NOT NULL,
+            vendedor TEXT NOT NULL,
+            cliente TEXT NOT NULL,
+            ciudad TEXT NOT NULL,
+            direccion TEXT NOT NULL,
+            telefono TEXT,
+            valor INTEGER NOT NULL,
+            status_bodega TEXT NOT NULL,
+            status_averias TEXT NOT NULL,
+            fecha_envio TEXT,
+            observaciones TEXT,
+            sincronizado INTEGER DEFAULT 0,
+            borrado INTEGER DEFAULT 0,
+            creado_en TEXT DEFAULT CURRENT_TIMESTAMP
+        )
+    """,
+    "vendedores": """
+        CREATE TABLE IF NOT EXISTS vendedores (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            nombre TEXT UNIQUE NOT NULL
+        )
+    """
 }
 
 # ============ BASE DE DATOS ============
 def get_db(modulo):
     """Abre la base de datos del módulo indicado"""
     os.makedirs(DB_DIR, exist_ok=True)
-    conn = sqlite3.connect(modulo["db"])
+    conn = sqlite3.connect(modulo["db"], timeout=10.0)
     conn.row_factory = sqlite3.Row
     return conn
 
 def inicializar_db():
-    for modulo in MODULOS.values():
+    for nombre, modulo in MODULOS.items():
         conn = get_db(modulo)
-        conn.execute(f"""
-            CREATE TABLE IF NOT EXISTS {modulo["tabla"]} (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                fecha TEXT NOT NULL,
-                tipo TEXT NOT NULL,
-                descripcion TEXT NOT NULL,
-                monto INTEGER NOT NULL,
-                sincronizado INTEGER DEFAULT 0,
-                borrado INTEGER DEFAULT 0,
-                creado_en TEXT DEFAULT CURRENT_TIMESTAMP
-            )
-        """)
+        # Crear tabla principal del módulo
+        conn.execute(ESQUEMAS[modulo["tabla"]])
+        # Si es averias, también crear tabla de vendedores
+        if nombre == "averias":
+            conn.execute(ESQUEMAS["vendedores"])
         conn.commit()
         conn.close()
 
@@ -117,17 +159,16 @@ def leer():
     ).fetchall()
     conn.close()
 
-    datos = [
-        {
-            "id": fila["id"],
-            "Fecha": fila["fecha"],
-            "Tipo": fila["tipo"],
-            "Descripción": fila["descripcion"],
-            "Monto": fila["monto"],
-            "sincronizado": fila["sincronizado"]
-        }
-        for fila in filas
-    ]
+    # Convertir filas a diccionarios con claves según los campos configurados
+    datos = []
+    for fila in filas:
+        registro = {"id": fila["id"], "sincronizado": fila["sincronizado"]}
+        for campo in modulo["campos"]:
+            # Convertir nombre de campo a nombre de columna SQLite (minúsculas, guiones bajos)
+            columna = campo.lower().replace(" ", "_").replace("ó", "o")
+            registro[campo] = fila[columna]
+        datos.append(registro)
+    
     return jsonify({"datos": datos})
 
 # ============ GUARDAR MOVIMIENTO (SQLite - instantáneo) ============
@@ -140,16 +181,26 @@ def guardar():
         return jsonify({"error": f"Módulo '{nombre}' no existe"}), 400
 
     datos = body.get("datos", {})
+    
+    # Construir query dinámicamente según los campos del módulo
+    columnas = [campo.lower().replace(" ", "_").replace("ó", "o") for campo in modulo["campos"]]
+    valores = [datos.get(campo, "") for campo in modulo["campos"]]
+    
+    # Convertir valores numéricos
+    if "Monto" in modulo["campos"]:
+        idx = modulo["campos"].index("Monto")
+        valores[idx] = int(float(valores[idx] or 0))
+    if "Valor" in modulo["campos"]:
+        idx = modulo["campos"].index("Valor")
+        valores[idx] = int(float(valores[idx] or 0))
+
+    placeholders = ", ".join(["?"] * len(columnas))
+    columnas_str = ", ".join(columnas)
 
     conn = get_db(modulo)
     cursor = conn.execute(
-        f"INSERT INTO {modulo['tabla']} (fecha, tipo, descripcion, monto) VALUES (?, ?, ?, ?)",
-        (
-            datos.get("Fecha", ""),
-            datos.get("Tipo", ""),
-            datos.get("Descripción", ""),
-            int(float(datos.get("Monto", 0)))
-        )
+        f"INSERT INTO {modulo['tabla']} ({columnas_str}) VALUES ({placeholders})",
+        valores
     )
     conn.commit()
     nuevo_id = cursor.lastrowid
@@ -175,15 +226,24 @@ def actualizar():
         conn.close()
         return jsonify({"error": "Registro no encontrado"}), 404
 
+    # Construir SET dinámico según los campos del módulo
+    columnas = [campo.lower().replace(" ", "_").replace("ó", "o") for campo in modulo["campos"]]
+    valores = [datos.get(campo, "") for campo in modulo["campos"]]
+    
+    # Convertir valores numéricos
+    if "Monto" in modulo["campos"]:
+        idx = modulo["campos"].index("Monto")
+        valores[idx] = int(float(valores[idx] or 0))
+    if "Valor" in modulo["campos"]:
+        idx = modulo["campos"].index("Valor")
+        valores[idx] = int(float(valores[idx] or 0))
+    
+    set_clause = ", ".join([f"{col}=?" for col in columnas])
+    valores.append(id_reg)
+
     conn.execute(
-        f"UPDATE {modulo['tabla']} SET fecha=?, tipo=?, descripcion=?, monto=? WHERE id=?",
-        (
-            datos.get("Fecha", ""),
-            datos.get("Tipo", ""),
-            datos.get("Descripción", ""),
-            int(float(datos.get("Monto", 0))),
-            id_reg
-        )
+        f"UPDATE {modulo['tabla']} SET {set_clause} WHERE id=?",
+        valores
     )
     # Si ya había subido a Sheets, marcar pendiente para que el sync lo actualice allá
     if fila["sincronizado"] == 1:
@@ -223,14 +283,17 @@ def borrar():
 
 # ============ SINCRONIZACIÓN CON GOOGLE SHEETS (background) ============
 def sincronizar_tabla(nombre_modulo, modulo):
-    """Sube los pendientes de un módulo a su hoja de Google Sheets"""
+    """Sube los pendientes de un módulo a su hoja de Google Sheets.
+    Usa conexiones cortas para evitar bloquear la base de datos."""
+    
+    # 1) Leer pendientes con conexión corta
     conn = get_db(modulo)
     pendientes = conn.execute(
         f"SELECT * FROM {modulo['tabla']} WHERE sincronizado = 0"
     ).fetchall()
+    conn.close()
 
     if not pendientes:
-        conn.close()
         return 0
 
     ids_ok = []
@@ -240,15 +303,16 @@ def sincronizar_tabla(nombre_modulo, modulo):
             accion = "borrar"
             datos = None
         else:
-            # Si la última columna Sheets ya la tiene, es actualizar; si no, nuevo
-            # (el Apps Script busca por id; si no existe, agrega fila nueva)
             accion = "actualizar"
-            datos = {
-                "Fecha": fila["fecha"],
-                "Tipo": fila["tipo"],
-                "Descripción": fila["descripcion"],
-                "Monto": str(fila["monto"])
-            }
+            datos = {}
+            for campo in modulo["campos"]:
+                columna = campo.lower().replace(" ", "_").replace("ó", "o")
+                valor = fila[columna]
+                # Convertir campos numéricos a string para Sheets
+                if campo in ["Monto", "Valor"]:
+                    datos[campo] = str(valor)
+                else:
+                    datos[campo] = valor or ""
 
         payload = {
             "hoja": modulo["hoja_sheets"],
@@ -265,25 +329,25 @@ def sincronizar_tabla(nombre_modulo, modulo):
                 continue
             resultado = respuesta.json()
             if resultado.get("ok"):
+                # 2) Actualizar SQLite con conexión corta
+                conn = get_db(modulo)
                 if fila["borrado"] == 1:
-                    # Borrado exitoso en Sheets → eliminar definitivamente de SQLite
                     conn.execute(f"DELETE FROM {modulo['tabla']} WHERE id = ?", (fila["id"],))
                     conn.commit()
                     print(f"[SYNC] {nombre_modulo}: id {fila['id']} borrado de Google Sheets ({resultado.get('mensaje', '')})")
                 else:
+                    conn.execute(f"UPDATE {modulo['tabla']} SET sincronizado = 1 WHERE id = ?", (fila["id"],))
+                    conn.commit()
                     ids_ok.append(fila["id"])
+                conn.close()
             else:
                 print(f"[SYNC] Apps Script respondió error: {resultado}")
         except Exception as e:
             print(f"[SYNC] Error subiendo {nombre_modulo} id {fila['id']}: {e}")
 
     if ids_ok:
-        placeholders = ",".join("?" * len(ids_ok))
-        conn.execute(f"UPDATE {modulo['tabla']} SET sincronizado = 1 WHERE id IN ({placeholders})", ids_ok)
-        conn.commit()
         print(f"[SYNC {datetime.now().strftime('%H:%M:%S')}] {nombre_modulo}: {len(ids_ok)} registros subidos a Google Sheets")
 
-    conn.close()
     return len(pendientes) - len(ids_ok)  # cuántos quedaron pendientes
 
 def sincronizar_pendientes():
@@ -375,6 +439,52 @@ def test_gs():
         })
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+# ============ GESTIONAR VENDEDORES ============
+@app.route("/vendedores", methods=["GET", "POST", "DELETE"])
+def gestionar_vendedores():
+    modulo = MODULOS.get("averias")
+    if not modulo:
+        return jsonify({"error": "Módulo averias no configurado"}), 500
+
+    conn = get_db(modulo)
+
+    if request.method == "GET":
+        # Listar todos los vendedores
+        vendedores = conn.execute("SELECT * FROM vendedores ORDER BY nombre").fetchall()
+        conn.close()
+        return jsonify({"vendedores": [{"id": v["id"], "nombre": v["nombre"]} for v in vendedores]})
+
+    elif request.method == "POST":
+        # Agregar nuevo vendedor
+        body = request.json or {}
+        nombre = body.get("nombre", "").strip()
+        if not nombre:
+            conn.close()
+            return jsonify({"error": "Falta el nombre del vendedor"}), 400
+        
+        try:
+            cursor = conn.execute("INSERT INTO vendedores (nombre) VALUES (?)", (nombre,))
+            conn.commit()
+            nuevo_id = cursor.lastrowid
+            conn.close()
+            return jsonify({"ok": True, "id": nuevo_id, "nombre": nombre})
+        except sqlite3.IntegrityError:
+            conn.close()
+            return jsonify({"error": "El vendedor ya existe"}), 400
+
+    elif request.method == "DELETE":
+        # Eliminar vendedor
+        body = request.json or {}
+        vendedor_id = body.get("id")
+        if not vendedor_id:
+            conn.close()
+            return jsonify({"error": "Falta el ID del vendedor"}), 400
+        
+        conn.execute("DELETE FROM vendedores WHERE id = ?", (vendedor_id,))
+        conn.commit()
+        conn.close()
+        return jsonify({"ok": True, "mensaje": "Vendedor eliminado"})
 
 # ============ INICIO ============
 if __name__ == "__main__":

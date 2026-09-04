@@ -19,10 +19,173 @@
         <a href="averias.html" class="active">⚠️ Averías</a>
         <a href="pagosMensuales.html">💳 Pagos Mensuales</a>
         <a href="https://script.google.com/macros/s/AKfycbxTNLv-ZJoboN1IybWeSXITP_FkQf6APFFbOMCX3mPMOaBBh2ACbpLBeMOHSbutKLAtYA/exec" target="_blank">✅ Confirmación</a>
+        <button class="btn-sync" id="btnSync" title="Sincronizar con Google Sheets">🔄 Sync</button>
     </nav>
 
-    <main class="contenido">
-        <p>Aquí irá el contenido de averías.</p>
+    <main class="contenido contenido-ancho">
+        <!-- BOTONES SUPERIORES -->
+        <div class="botones-superiores">
+            <button class="btn-nuevo" id="btnNuevaAveria">➕ Nueva Avería</button>
+            <button class="btn-vendedores" id="btnGestionarVendedores">👥 Vendedores</button>
+        </div>
+
+        <!-- FILTROS -->
+        <div class="filtros-card">
+            <label for="filtroVendedor">Filtrar por Vendedor:</label>
+            <select id="filtroVendedor">
+                <option value="">Todos</option>
+            </select>
+            
+            <div class="toggle-completadas">
+                <label class="switch">
+                    <input type="checkbox" id="chkMostrarCompletadas">
+                    <span class="slider"></span>
+                </label>
+                <span>Mostrar completadas (Enviada/Descontada + Entregado)</span>
+            </div>
+        </div>
+
+        <!-- TABLA -->
+        <div class="tabla-card">
+            <h2>📋 Registros de Averías</h2>
+            <div class="tabla-scroll">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Fecha</th>
+                            <th>Vendedor</th>
+                            <th>Cliente</th>
+                            <th>Ciudad</th>
+                            <th>Dirección</th>
+                            <th>Valor</th>
+                            <th>Status Bodega</th>
+                            <th>Status Averías</th>
+                            <th>Fecha Envío</th>
+                            <th>Observaciones</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody id="tablaAverias">
+                        <tr><td colspan="11" class="sin-datos">Cargando...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
     </main>
+
+    <!-- MODAL NUEVA/EDITAR AVERÍA -->
+    <div class="modal-fondo" id="modalAveriaFondo">
+        <div class="modal modal-grande">
+            <h3 id="tituloModalAveria">➕ Nueva Avería</h3>
+            <form id="formAveria">
+                <div class="form-grid">
+                    <div class="form-grupo">
+                        <label for="averiaFecha">Fecha *</label>
+                        <input type="date" id="averiaFecha" required>
+                    </div>
+
+                    <div class="form-grupo">
+                        <label for="averiaVendedor">Vendedor *</label>
+                        <select id="averiaVendedor" required>
+                            <option value="">Seleccionar...</option>
+                        </select>
+                    </div>
+
+                    <div class="form-grupo">
+                        <label for="averiaCliente">Cliente *</label>
+                        <input type="text" id="averiaCliente" required>
+                    </div>
+
+                    <div class="form-grupo">
+                        <label for="averiaCiudad">Ciudad *</label>
+                        <input type="text" id="averiaCiudad" required>
+                    </div>
+
+                    <div class="form-grupo">
+                        <label for="averiaDireccion">Dirección *</label>
+                        <input type="text" id="averiaDireccion">
+                    </div>
+
+                    <div class="form-grupo">
+                        <label for="averiaValor">Valor *</label>
+                        <input type="number" id="averiaValor" min="0" step="100" >
+                    </div>
+
+                    <div class="form-grupo">
+                        <label for="averiaStatusBodega">Status Bodega *</label>
+                        <select id="averiaStatusBodega" required>
+                            <option value="">Seleccionar...</option>
+                            <option value="Recibida">Recibida</option>
+                            <option value="Enviada">Enviada</option>
+                            <option value="Descontada">Descontada</option>
+                        </select>
+                    </div>
+
+                    <div class="form-grupo">
+                        <label for="averiaStatusAverias">Status Averías *</label>
+                        <select id="averiaStatusAverias" required>
+                            <option value="">Seleccionar...</option>
+                            <option value="Entregado">Entregado</option>
+                            <option value="Pendientes">Pendientes</option>
+                        </select>
+                    </div>
+
+                    <div class="form-grupo">
+                        <label for="averiaFechaEnvio">Fecha de Envío</label>
+                        <input type="date" id="averiaFechaEnvio">
+                    </div>
+                </div>
+
+                <div class="form-grupo">
+                    <label for="averiaObservaciones">Observaciones</label>
+                    <textarea id="averiaObservaciones" rows="3"></textarea>
+                </div>
+
+                <div class="modal-botones">
+                    <button type="button" class="btn-cancelar" id="btnCancelarAveria">Cancelar</button>
+                    <button type="submit" class="btn-guardar">💾 Guardar</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- MODAL GESTIONAR VENDEDORES -->
+    <div class="modal-fondo" id="modalVendedoresFondo">
+        <div class="modal">
+            <h3>👥 Gestionar Vendedores</h3>
+            
+            <div class="form-grupo">
+                <label for="nuevoVendedor">Nuevo Vendedor</label>
+                <div style="display: flex; gap: 10px;">
+                    <input type="text" id="nuevoVendedor" placeholder="Nombre del vendedor">
+                    <button class="btn-guardar" id="btnAgregarVendedor">Agregar</button>
+                </div>
+            </div>
+
+            <div class="vendedores-lista" id="listaVendedores">
+                <p class="sin-datos">Cargando vendedores...</p>
+            </div>
+
+            <div class="modal-botones">
+                <button class="btn-cancelar" id="btnCerrarVendedores">Cerrar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL BORRAR -->
+    <div class="modal-fondo" id="modalBorrarFondo">
+        <div class="modal">
+            <h3>🗑️ Borrar Avería</h3>
+            <p class="modal-texto-borrar">¿Seguro que quieres borrar esta avería?</p>
+            <p class="modal-texto-borrar" id="borrarDescripcion"></p>
+            <div class="modal-botones">
+                <button class="btn-cancelar" id="btnCancelarBorrar">Cancelar</button>
+                <button class="btn-borrar-confirmar" id="btnConfirmarBorrar">Borrar</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="../js/acciones.js"></script>
+    <script src="../js/averias.js"></script>
 </body>
 </html>

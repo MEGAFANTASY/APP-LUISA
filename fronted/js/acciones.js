@@ -149,41 +149,74 @@ function formatearFechaInput(fecha) {
 
 // Cerrar modales al hacer clic en el fondo oscuro
 document.addEventListener("DOMContentLoaded", () => {
-    document.getElementById("modalEditarFondo").addEventListener("click", (e) => {
-        if (e.target.id === "modalEditarFondo") cerrarModalEditar();
-    });
-    document.getElementById("modalBorrarFondo").addEventListener("click", (e) => {
-        if (e.target.id === "modalBorrarFondo") cerrarModalBorrar();
-    });
-    document.getElementById("btnGuardarEdicion").addEventListener("click", guardarEdicion);
-    document.getElementById("btnCancelarEdicion").addEventListener("click", cerrarModalEditar);
-    document.getElementById("btnConfirmarBorrar").addEventListener("click", confirmarBorrar);
-    document.getElementById("btnCancelarBorrar").addEventListener("click", cerrarModalBorrar);
+    const modalEditarFondo = document.getElementById("modalEditarFondo");
+    const modalBorrarFondo = document.getElementById("modalBorrarFondo");
+    const btnGuardarEdicion = document.getElementById("btnGuardarEdicion");
+    const btnCancelarEdicion = document.getElementById("btnCancelarEdicion");
+    const btnConfirmarBorrar = document.getElementById("btnConfirmarBorrar");
+    const btnCancelarBorrar = document.getElementById("btnCancelarBorrar");
+    const btnSync = document.getElementById("btnSync");
+
+    if (modalEditarFondo) {
+        modalEditarFondo.addEventListener("click", (e) => {
+            if (e.target.id === "modalEditarFondo") cerrarModalEditar();
+        });
+    }
+    if (modalBorrarFondo) {
+        modalBorrarFondo.addEventListener("click", (e) => {
+            if (e.target.id === "modalBorrarFondo") cerrarModalBorrar();
+        });
+    }
+    if (btnGuardarEdicion) btnGuardarEdicion.addEventListener("click", guardarEdicion);
+    if (btnCancelarEdicion) btnCancelarEdicion.addEventListener("click", cerrarModalEditar);
+    if (btnConfirmarBorrar) btnConfirmarBorrar.addEventListener("click", confirmarBorrar);
+    if (btnCancelarBorrar) btnCancelarBorrar.addEventListener("click", cerrarModalBorrar);
 
     // Botón de sincronización manual en el nav
-    const btnSync = document.getElementById("btnSync");
-    if (btnSync) btnSync.addEventListener("click", forzarSync);
+    if (btnSync) {
+        console.log("[SYNC] Asignando listener al botón Sync");
+        btnSync.addEventListener("click", (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            forzarSync();
+        });
+    }
 });
 
 // ============ SINCRONIZACIÓN MANUAL ============
 async function forzarSync() {
+    console.log("[SYNC] Botón Sync presionado");
     const btnSync = document.getElementById("btnSync");
+    if (!btnSync) {
+        console.error("[SYNC] No se encontró el botón btnSync");
+        return;
+    }
+
+    if (btnSync.disabled) return;
+
     btnSync.disabled = true;
     btnSync.textContent = "⏳";
 
     try {
         const respuesta = await fetch("/sincronizar", { method: "POST" });
+        console.log("[SYNC] Respuesta status:", respuesta.status);
         const resultado = await respuesta.json();
+        console.log("[SYNC] Resultado:", resultado);
 
         if (resultado.pendientes === 0) {
             btnSync.textContent = "✅";
         } else {
             btnSync.textContent = `⚠️ ${resultado.pendientes}`;
         }
-        // Recargar la tabla por si hubo cambios de estado
-        cargarMovimientos();
+
+        // Recargar la tabla correspondiente
+        if (typeof cargarMovimientos === "function") {
+            cargarMovimientos();
+        } else if (typeof cargarAverias === "function") {
+            cargarAverias();
+        }
     } catch (error) {
-        console.error("Error al sincronizar:", error);
+        console.error("[SYNC] Error al sincronizar:", error);
         btnSync.textContent = "❌";
     }
 
