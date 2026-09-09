@@ -8,24 +8,89 @@
 </head>
 <body>
     <header>
-        <h1>>🏦 Bancos</h1>
+        <h1>🏦 Bancos</h1>
     </header>
 
     <nav class="nav-menu">
-        <a href="index.html">>🏠 Inicio</a>
-        <a href="cajaMenor.html">>💰 Caja Menor</a>
-        <a href="libroDiario.html">>📒 Libro Diario</a>
-        <a href="transportadoras.html">>🚚 Transportadoras</a>
-        <a href="averias.html">>⚠️ Averías</a>
-        <a href="bancos.html" class="active">>🏦 Bancos</a>
-        <a href="pagosMensuales.html">>💳 Pagos Mensuales</a>
-        <a href="https://script.google.com/macros/s/AKfycbxTNLv-ZJoboN1IybWeSXITP_FkQf6APFFbOMCX3mPMOaBBh2ACbpLBeMOHSbutKLAtYA/exec" target="_blank">>✅ Confirmación</a>
-        <button class="btn-sync" id="btnSync" title="Sincronizar con Google Sheets">>🔄 Sync</button>
+        <a href="index.html">🏠 Inicio</a>
+        <a href="cajaMenor.html">💰 Caja Menor</a>
+        <a href="libroDiario.html">📒 Libro Diario</a>
+        <a href="averias.html">⚠️ Averías</a>
+        <a href="bancos.html" class="active">🏦 Bancos</a>
+        <a href="pagosMensuales.html">💳 Pagos Mensuales</a>
+        <a href="https://script.google.com/macros/s/AKfycbxTNLv-ZJoboN1IybWeSXITP_FkQf6APFFbOMCX3mPMOaBBh2ACbpLBeMOHSbutKLAtYA/exec" target="_blank">✅ Confirmación</a>
+        <button class="btn-sync" id="btnSync" title="Sincronizar con Google Sheets">🔄 Sync</button>
     </nav>
 
-    <main class="contenido">
-        <p class="sin-datos">Módulo de Bancos - en construcción</p>
+    <main class="contenido contenido-ancho">
+        <div class="botones-superiores">
+            <button id="btnAgregarBanco" class="btn-nuevo">➕ Agregar Banco</button>
+            <div class="input-archivo">
+                <input type="file" id="inputExcel" accept=".xlsx,.csv" title="Subir Excel/CSV al banco seleccionado">
+                <label for="inputExcel" class="btn-vendedores">📁 Importar Excel/CSV</label>
+            </div>
+        </div>
+
+        <!-- Pestañas de bancos -->
+        <div class="tabs-bancos" id="tabsBancos">
+            <!-- Se generan dinámicamente -->
+        </div>
+
+        <!-- Pestañas internas: Sin identificar / Banco completo -->
+        <div class="tabs-internas" id="tabsInternas" style="display:none;">
+            <button class="tab-interna activa" data-tab="sinIdentificar">Sin identificar</button>
+            <button class="tab-interna" data-tab="completo">Banco completo</button>
+        </div>
+
+        <!-- Contenido de cada banco -->
+        <div id="contenidoBancos">
+            <p class="sin-datos" id="mensajeInicial">No hay bancos creados. Haz clic en "Agregar Banco".</p>
+        </div>
     </main>
+
+    <!-- Modal: Agregar/Editar Banco -->
+    <div class="modal-fondo" id="modalBancoFondo">
+        <div class="modal">
+            <h3 id="tituloModalBanco">Agregar Banco</h3>
+            <div class="form-grupo">
+                <label for="nombreBanco">Nombre del Banco</label>
+                <input type="text" id="nombreBanco" placeholder="ej: banco_flor" maxlength="50">
+                <small class="form-ayuda">Se agregará automáticamente el prefijo "banco_" si no lo escribes.</small>
+            </div>
+            <div class="modal-botones">
+                <button class="btn-cancelar" id="btnCancelarBanco">Cancelar</button>
+                <button class="btn-confirmar" id="btnGuardarBanco">Guardar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal: Borrar Banco -->
+    <div class="modal-fondo" id="modalBorrarBancoFondo">
+        <div class="modal">
+            <h3>¿Eliminar banco?</h3>
+            <p class="modal-texto-borrar">Se borrará el banco <strong id="nombreBancoBorrar"></strong> y todos sus movimientos.</p>
+            <div class="modal-botones">
+                <button class="btn-cancelar" id="btnCancelarBorrarBanco">Cancelar</button>
+                <button class="btn-borrar-confirmar" id="btnConfirmarBorrarBanco">Eliminar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal: Identificar Movimiento -->
+    <div class="modal-fondo" id="modalIdentificarFondo">
+        <div class="modal">
+            <h3>Identificar movimiento</h3>
+            <p class="modal-texto-borrar" id="textoIdentificar"></p>
+            <div class="form-grupo">
+                <label for="inputMotivoIdentificar">Motivo de identificación</label>
+                <input type="text" id="inputMotivoIdentificar" placeholder="Ej: Pago factura #123">
+            </div>
+            <div class="modal-botones">
+                <button class="btn-cancelar" id="btnCancelarIdentificar">Cancelar</button>
+                <button class="btn-confirmar" id="btnConfirmarIdentificar">Guardar</button>
+            </div>
+        </div>
+    </div>
 
     <script src="../js/acciones.js"></script>
     <script src="../js/bancos.js"></script>

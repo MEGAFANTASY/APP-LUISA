@@ -5,7 +5,19 @@ import sqlite3
 import threading
 import time
 import os
+import io
+import csv
 from datetime import datetime
+
+try:
+    import openpyxl
+except ImportError:
+    openpyxl = None
+
+try:
+    import pandas as pd
+except ImportError:
+    pd = None
 
 # Servir archivos estáticos desde la carpeta fronted (sin static_url_path para controlar rutas manualmente)
 app = Flask(__name__, static_folder="../fronted")
@@ -37,6 +49,12 @@ MODULOS = {
         "tabla": "averias",
         "hoja_sheets": "Averias",
         "campos": ["Fecha", "Vendedor", "Cliente", "Ciudad", "Direccion", "Valor", "Status Bodega", "Status Averias", "Fecha Envio", "Observaciones"]
+    },
+    "bancos": {
+        "db": os.path.join(DB_DIR, "bancos.db"),
+        "tabla": "bancos_lista",
+        "hoja_sheets": "bancos",
+        "campos": ["Fecha", "Descripción", "Monto", "Identificación"]
     }
 }
 
@@ -78,6 +96,26 @@ ESQUEMAS = {
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             nombre TEXT UNIQUE NOT NULL
         )
+    """,
+    "bancos_lista": """
+        CREATE TABLE IF NOT EXISTS bancos_lista (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            nombre TEXT UNIQUE NOT NULL,
+            banco_actual INTEGER DEFAULT 0,
+            creado_en TEXT DEFAULT CURRENT_TIMESTAMP
+        )
+    """,
+    "bancos_movimientos": """
+        CREATE TABLE IF NOT EXISTS {nombre_tabla} (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            fecha TEXT NOT NULL,
+            descripcion TEXT NOT NULL,
+            monto INTEGER NOT NULL,
+            identificacion TEXT,
+            sincronizado INTEGER DEFAULT 0,
+            borrado INTEGER DEFAULT 0,
+            creado_en TEXT DEFAULT CURRENT_TIMESTAMP
+        )
     """
 }
 
@@ -89,11 +127,36 @@ def get_db(modulo):
     conn.row_factory = sqlite3.Row
     return conn
 
+def nombre_tabla_banco(nombre_banco):
+    """Genera un nombre de tabla SQL válido para un banco."""
+    return "banco_" + "".join(c for c in nombre_banco.lower().strip().replace(" ", "_") if c.isalnum() or c == "_")
+
+def get_db_banco(nombre_banco):
+    """Abre la base de datos de bancos con una conexión lista para operar en la tabla del banco dado."""
+    modulo = MODULOS["bancos"]
+    conn = get_db(modulo)
+    tabla = nombre_tabla_banco(nombre_banco)
+    conn.execute(ESQUEMAS["bancos_movimientos"].format(nombre_tabla=tabla))
+    conn.commit()
+    return conn, tabla
+
 def inicializar_db():
     for nombre, modulo in MODULOS.items():
         conn = get_db(modulo)
         # Crear tabla principal del módulo
-        conn.execute(ESQUEMAS[modulo["tabla"]])
+        if nombre == "bancos":
+            conn.execute(ESQUEMAS["bancos_lista"])
+            # Migración: agregar columna banco_actual si no existe
+            columnas = [c[1] for c in conn.execute("PRAGMA table_info(bancos_lista)").fetchall()]
+            if "banco_actual" not in columnas:
+                conn.execute("ALTER TABLE bancos_lista ADD COLUMN banco_actual INTEGER DEFAULT 0")
+            # Crear tablas para cada banco existente
+            bancos = conn.execute("SELECT nombre FROM bancos_lista").fetchall()
+            for b in bancos:
+                tabla = nombre_tabla_banco(b["nombre"])
+                conn.execute(ESQUEMAS["bancos_movimientos"].format(nombre_tabla=tabla))
+        else:
+            conn.execute(ESQUEMAS[modulo["tabla"]])
         # Si es averias, también crear tabla de vendedores
         if nombre == "averias":
             conn.execute(ESQUEMAS["vendedores"])
@@ -101,7 +164,9 @@ def inicializar_db():
         conn.close()
 
     # Migración para DBs existentes: agregar columna borrado si no existe
-    for modulo in MODULOS.values():
+    for nombre, modulo in MODULOS.items():
+        if nombre == "bancos":
+            continue
         conn = get_db(modulo)
         columnas = [c[1] for c in conn.execute(f"PRAGMA table_info({modulo['tabla']})").fetchall()]
         if "borrado" not in columnas:
@@ -354,11 +419,102 @@ def sincronizar_pendientes():
     """Sincroniza todos los módulos con Google Sheets"""
     total_pendientes = 0
     for nombre, modulo in MODULOS.items():
-        total_pendientes += sincronizar_tabla(nombre, modulo)
+        if nombre == "bancos":
+            total_pendientes += sincronizar_bancos()
+        else:
+            total_pendientes += sincronizar_tabla(nombre, modulo)
 
     if total_pendientes == 0:
         print(f"[SYNC {datetime.now().strftime('%H:%M:%S')}] Todo sincronizado")
     return total_pendientes
+
+def sincronizar_bancos():
+    """Sincroniza todos los bancos dinámicos con la hoja 'bancos' de Google Sheets."""
+    modulo = MODULOS["bancos"]
+    conn = get_db(modulo)
+    bancos = conn.execute("SELECT nombre FROM bancos_lista ORDER BY id").fetchall()
+    conn.close()
+
+    if not bancos:
+        return 0
+
+    # 1) Asegurar que existan los bloques de cada banco en Google Sheets (incluso vacíos)
+    for b in bancos:
+        nombre_banco = b["nombre"]
+        payload_asegurar = {
+            "hoja": modulo["hoja_sheets"],
+            "accion": "asegurar_banco",
+            "banco": nombre_banco
+        }
+        try:
+            respuesta = requests.post(API_URL, json=payload_asegurar, allow_redirects=True, timeout=30)
+            print(f"[SYNC] ASEGURAR {nombre_banco} status={respuesta.status_code}")
+            if respuesta.status_code != 200 or "html" in respuesta.headers.get("content-type", "").lower():
+                print(f"[SYNC] Respuesta inesperada: {respuesta.text[:300]}")
+        except Exception as e:
+            print(f"[SYNC] Error asegurando {nombre_banco}: {e}")
+
+    # 2) Sincronizar movimientos de cada banco
+    pendientes_total = 0
+    for b in bancos:
+        nombre_banco = b["nombre"]
+        conn, tabla = get_db_banco(nombre_banco)
+        pendientes = conn.execute(
+            f"SELECT * FROM {tabla} WHERE sincronizado = 0"
+        ).fetchall()
+        conn.close()
+
+        if not pendientes:
+            continue
+
+        ids_ok = []
+        for fila in pendientes:
+            if fila["borrado"] == 1:
+                accion = "borrar"
+                datos = None
+            else:
+                accion = "actualizar"
+                datos = {
+                    "Fecha": fila["fecha"],
+                    "Descripción": fila["descripcion"] or "",
+                    "Monto": str(fila["monto"]),
+                    "Identificación": fila["identificacion"] or ""
+                }
+
+            payload = {
+                "hoja": modulo["hoja_sheets"],
+                "accion": accion,
+                "id": f"{nombre_banco}_{fila['id']}",
+                "banco": nombre_banco,
+                "datos": datos
+            }
+
+            try:
+                respuesta = requests.post(API_URL, json=payload, allow_redirects=True, timeout=30)
+                print(f"[SYNC] POST bancos {nombre_banco} id={fila['id']} status={respuesta.status_code}")
+                if respuesta.status_code != 200 or "html" in respuesta.headers.get("content-type", "").lower():
+                    print(f"[SYNC] Respuesta inesperada: {respuesta.text[:300]}")
+                    continue
+                resultado = respuesta.json()
+                if resultado.get("ok"):
+                    conn, tabla = get_db_banco(nombre_banco)
+                    if fila["borrado"] == 1:
+                        conn.execute(f"DELETE FROM {tabla} WHERE id = ?", (fila["id"],))
+                    else:
+                        conn.execute(f"UPDATE {tabla} SET sincronizado = 1 WHERE id = ?", (fila["id"],))
+                        ids_ok.append(fila["id"])
+                    conn.commit()
+                    conn.close()
+                else:
+                    print(f"[SYNC] Apps Script error: {resultado}")
+            except Exception as e:
+                print(f"[SYNC] Error bancos {nombre_banco} id {fila['id']}: {e}")
+
+        pendientes_total += len(pendientes) - len(ids_ok)
+        if ids_ok:
+            print(f"[SYNC {datetime.now().strftime('%H:%M:%S')}] bancos/{nombre_banco}: {len(ids_ok)} registros subidos")
+
+    return pendientes_total
 
 def ciclo_sincronizacion():
     """Hilo que corre la sincronización cada INTERVALO_SYNC segundos"""
@@ -388,12 +544,23 @@ def reset_sync():
         modulos = MODULOS
 
     total = 0
-    for modulo in modulos.values():
-        conn = get_db(modulo)
-        cursor = conn.execute(f"UPDATE {modulo['tabla']} SET sincronizado = 0 WHERE borrado = 0")
-        total += cursor.rowcount
-        conn.commit()
-        conn.close()
+    for nombre, modulo in modulos.items():
+        if nombre == "bancos":
+            conn = get_db(modulo)
+            bancos = conn.execute("SELECT nombre FROM bancos_lista").fetchall()
+            conn.close()
+            for b in bancos:
+                conn, tabla = get_db_banco(b["nombre"])
+                cursor = conn.execute(f"UPDATE {tabla} SET sincronizado = 0 WHERE borrado = 0")
+                total += cursor.rowcount
+                conn.commit()
+                conn.close()
+        else:
+            conn = get_db(modulo)
+            cursor = conn.execute(f"UPDATE {modulo['tabla']} SET sincronizado = 0 WHERE borrado = 0")
+            total += cursor.rowcount
+            conn.commit()
+            conn.close()
 
     return jsonify({"ok": True, "marcados": total, "mensaje": "Ahora llama a /sincronizar para re-subir todo"})
 
@@ -439,6 +606,307 @@ def test_gs():
         })
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+# ============ GESTIONAR BANCOS ============
+@app.route("/bancos/detectar", methods=["POST"])
+def detectar_bancos_sheets():
+    """Lee la hoja 'bancos' de Google Sheets y crea localmente los bancos que no existan."""
+    modulo = MODULOS.get("bancos")
+    if not modulo:
+        return jsonify({"error": "Módulo bancos no configurado"}), 500
+
+    try:
+        respuesta = requests.get(API_URL, params={"hoja": modulo["hoja_sheets"]}, timeout=30)
+        print(f"[BANCOS DETECTAR] GET status={respuesta.status_code}")
+        if respuesta.status_code != 200 or "html" in respuesta.headers.get("content-type", "").lower():
+            return jsonify({"error": "No se pudo leer Google Sheets", "detalle": respuesta.text[:300]}), 500
+        resultado = respuesta.json()
+        if resultado.get("error"):
+            return jsonify({"error": resultado["error"]}), 500
+
+        bloques = resultado.get("bancos", [])
+        if not bloques:
+            return jsonify({"ok": True, "creados": 0, "mensaje": "No se encontraron bancos en Google Sheets"})
+
+        conn = get_db(modulo)
+        creados = 0
+        for bloque in bloques:
+            nombre = bloque.get("nombre", "").strip()
+            if not nombre.lower().startswith("banco_"):
+                continue
+            try:
+                cursor = conn.execute("INSERT INTO bancos_lista (nombre) VALUES (?)", (nombre,))
+                creados += 1
+                tabla = nombre_tabla_banco(nombre)
+                conn.execute(ESQUEMAS["bancos_movimientos"].format(nombre_tabla=tabla))
+            except sqlite3.IntegrityError:
+                # Ya existe, ignorar
+                pass
+        conn.commit()
+        conn.close()
+
+        return jsonify({"ok": True, "creados": creados, "bancos": [b["nombre"] for b in bloques]})
+    except Exception as e:
+        print(f"[BANCOS DETECTAR] Error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/bancos", methods=["GET", "POST", "DELETE"])
+def gestionar_bancos():
+    modulo = MODULOS.get("bancos")
+    if not modulo:
+        return jsonify({"error": "Módulo bancos no configurado"}), 500
+
+    conn = get_db(modulo)
+
+    if request.method == "GET":
+        bancos = conn.execute("SELECT * FROM bancos_lista ORDER BY nombre").fetchall()
+        conn.close()
+        return jsonify({"bancos": [{"id": b["id"], "nombre": b["nombre"], "banco_actual": b["banco_actual"]} for b in bancos]})
+
+    elif request.method == "POST":
+        body = request.json or {}
+        nombre = body.get("nombre", "").strip()
+        if not nombre:
+            conn.close()
+            return jsonify({"error": "Falta el nombre del banco"}), 400
+        if not nombre.lower().startswith("banco_"):
+            conn.close()
+            return jsonify({"error": "El nombre del banco debe empezar con 'banco_'"}), 400
+        if nombre.lower() == "bancos_lista":
+            conn.close()
+            return jsonify({"error": "Nombre de banco no permitido"}), 400
+
+        try:
+            cursor = conn.execute("INSERT INTO bancos_lista (nombre) VALUES (?)", (nombre,))
+            conn.commit()
+            nuevo_id = cursor.lastrowid
+            tabla = nombre_tabla_banco(nombre)
+            conn.execute(ESQUEMAS["bancos_movimientos"].format(nombre_tabla=tabla))
+            conn.commit()
+            conn.close()
+            return jsonify({"ok": True, "id": nuevo_id, "nombre": nombre})
+        except sqlite3.IntegrityError:
+            conn.close()
+            return jsonify({"error": "El banco ya existe"}), 400
+
+    elif request.method == "DELETE":
+        body = request.json or {}
+        banco_id = body.get("id")
+        if not banco_id:
+            conn.close()
+            return jsonify({"error": "Falta el ID del banco"}), 400
+
+        banco = conn.execute("SELECT nombre FROM bancos_lista WHERE id = ?", (banco_id,)).fetchone()
+        if not banco:
+            conn.close()
+            return jsonify({"error": "Banco no encontrado"}), 404
+
+        tabla = nombre_tabla_banco(banco["nombre"])
+        conn.execute(f"DROP TABLE IF EXISTS {tabla}")
+        conn.execute("DELETE FROM bancos_lista WHERE id = ?", (banco_id,))
+        conn.commit()
+        conn.close()
+        return jsonify({"ok": True, "mensaje": "Banco eliminado"})
+
+# ============ ACTUALIZAR BANCO ACTUAL ============
+@app.route("/bancos/<nombre_banco>/banco_actual", methods=["PUT"])
+def actualizar_banco_actual(nombre_banco):
+    if not nombre_banco.lower().startswith("banco_"):
+        return jsonify({"error": "Nombre de banco inválido"}), 400
+
+    body = request.json or {}
+    banco_actual = int(float(body.get("banco_actual", 0) or 0))
+
+    modulo = MODULOS["bancos"]
+    conn = get_db(modulo)
+    conn.execute("UPDATE bancos_lista SET banco_actual = ? WHERE nombre = ?", (banco_actual, nombre_banco))
+    conn.commit()
+    conn.close()
+    return jsonify({"ok": True, "banco_actual": banco_actual})
+
+
+# ============ MOVIMIENTOS DE UN BANCO ============
+@app.route("/bancos/<nombre_banco>/movimientos", methods=["GET", "POST"])
+def movimientos_banco(nombre_banco):
+    if not nombre_banco.lower().startswith("banco_"):
+        return jsonify({"error": "Nombre de banco inválido"}), 400
+
+    if request.method == "GET":
+        conn, tabla = get_db_banco(nombre_banco)
+        filas = conn.execute(
+            f"SELECT * FROM {tabla} WHERE borrado = 0 ORDER BY fecha DESC, id DESC"
+        ).fetchall()
+        conn.close()
+        datos = []
+        for fila in filas:
+            datos.append({
+                "id": fila["id"],
+                "Fecha": fila["fecha"],
+                "Descripción": fila["descripcion"],
+                "Monto": fila["monto"],
+                "Identificación": fila["identificacion"] or "",
+                "sincronizado": fila["sincronizado"]
+            })
+        return jsonify({"datos": datos})
+
+    elif request.method == "POST":
+        body = request.json or {}
+        datos = body.get("datos", {})
+        conn, tabla = get_db_banco(nombre_banco)
+        cursor = conn.execute(
+            f"INSERT INTO {tabla} (fecha, descripcion, monto, identificacion) VALUES (?, ?, ?, ?)",
+            (datos.get("Fecha", ""), datos.get("Descripción", ""), int(float(datos.get("Monto", 0) or 0)), datos.get("Identificación", ""))
+        )
+        conn.commit()
+        nuevo_id = cursor.lastrowid
+        conn.close()
+        return jsonify({"ok": True, "id": nuevo_id})
+
+@app.route("/bancos/<nombre_banco>/movimientos/<int:mov_id>", methods=["PUT", "DELETE"])
+def movimiento_banco_crud(nombre_banco, mov_id):
+    if not nombre_banco.lower().startswith("banco_"):
+        return jsonify({"error": "Nombre de banco inválido"}), 400
+
+    conn, tabla = get_db_banco(nombre_banco)
+    fila = conn.execute(f"SELECT sincronizado, borrado FROM {tabla} WHERE id = ?", (mov_id,)).fetchone()
+    if not fila:
+        conn.close()
+        return jsonify({"error": "Registro no encontrado"}), 404
+
+    if request.method == "PUT":
+        body = request.json or {}
+        datos = body.get("datos", {})
+        conn.execute(
+            f"UPDATE {tabla} SET fecha=?, descripcion=?, monto=?, identificacion=? WHERE id=?",
+            (datos.get("Fecha", ""), datos.get("Descripción", ""), int(float(datos.get("Monto", 0) or 0)), datos.get("Identificación", ""), mov_id)
+        )
+        if fila["sincronizado"] == 1:
+            conn.execute(f"UPDATE {tabla} SET sincronizado = 0 WHERE id = ?", (mov_id,))
+        conn.commit()
+        conn.close()
+        return jsonify({"ok": True})
+
+    elif request.method == "DELETE":
+        if fila["sincronizado"] == 1:
+            conn.execute(f"UPDATE {tabla} SET borrado = 1, sincronizado = 0 WHERE id = ?", (mov_id,))
+        else:
+            conn.execute(f"DELETE FROM {tabla} WHERE id = ?", (mov_id,))
+        conn.commit()
+        conn.close()
+        return jsonify({"ok": True})
+
+
+# ============ IMPORTAR EXCEL/CSV A UN BANCO ============
+@app.route("/bancos/<nombre_banco>/importar", methods=["POST"])
+def importar_banco(nombre_banco):
+    if not nombre_banco.lower().startswith("banco_"):
+        return jsonify({"error": "Nombre de banco inválido"}), 400
+
+    if "archivo" not in request.files:
+        return jsonify({"error": "No se envió ningún archivo"}), 400
+
+    archivo = request.files["archivo"]
+    if archivo.filename == "":
+        return jsonify({"error": "Archivo vacío"}), 400
+
+    nombre_archivo = archivo.filename.lower()
+    contenido = archivo.read()
+
+    try:
+        if nombre_archivo.endswith(".csv"):
+            filas = leer_csv(contenido)
+        elif nombre_archivo.endswith(".xlsx"):
+            filas = leer_xlsx(contenido)
+        else:
+            return jsonify({"error": "Formato no soportado. Usa .csv o .xlsx"}), 400
+    except Exception as e:
+        return jsonify({"error": f"Error leyendo archivo: {str(e)}"}), 400
+
+    if not filas:
+        return jsonify({"error": "El archivo no contiene datos"}), 400
+
+    conn, tabla = get_db_banco(nombre_banco)
+    insertados = 0
+    errores = []
+
+    for fila in filas:
+        try:
+            fecha = normalizar_fecha(fila.get("Fecha", ""))
+            descripcion = str(fila.get("Descripción", "")).strip()
+            referencia = str(fila.get("Referencia", "")).strip()
+            valor = fila.get("Valor", fila.get("Monto", 0))
+            monto = int(float(str(valor).replace(",", "").replace("$", "")) or 0)
+
+            if not fecha or not descripcion:
+                continue
+
+            cursor = conn.execute(
+                f"INSERT INTO {tabla} (fecha, descripcion, monto, identificacion) VALUES (?, ?, ?, ?)",
+                (fecha, descripcion, monto, referencia)
+            )
+            insertados += 1
+        except Exception as e:
+            errores.append(str(e))
+
+    conn.commit()
+    conn.close()
+
+    # Sincronizar automáticamente con Google Sheets
+    sincronizar_bancos()
+
+    return jsonify({
+        "ok": True,
+        "insertados": insertados,
+        "errores": errores,
+        "mensaje": f"{insertados} movimientos importados y sincronizados"
+    })
+
+
+def leer_csv(contenido):
+    """Lee un archivo CSV y devuelve lista de diccionarios."""
+    texto = contenido.decode("utf-8", errors="ignore")
+    lector = csv.DictReader(texto.splitlines())
+    return list(lector)
+
+
+def leer_xlsx(contenido):
+    """Lee un archivo XLSX y devuelve lista de diccionarios con las columnas esperadas."""
+    if openpyxl is None:
+        raise Exception("openpyxl no está instalado")
+
+    wb = openpyxl.load_workbook(filename=io.BytesIO(contenido), data_only=True)
+    hoja = wb.active
+    filas = []
+
+    encabezados = [str(c.value or "").strip() for c in hoja[1]]
+    if "Fecha" not in encabezados or "Descripción" not in encabezados:
+        raise Exception("El Excel no tiene las columnas Fecha y Descripción")
+
+    for fila in hoja.iter_rows(min_row=2, values_only=True):
+        if all(v is None or str(v).strip() == "" for v in fila):
+            continue
+        datos = {}
+        for i, encabezado in enumerate(encabezados):
+            if i < len(fila):
+                datos[encabezado] = fila[i]
+        filas.append(datos)
+
+    return filas
+
+
+def normalizar_fecha(valor):
+    """Convierte una fecha a formato YYYY-MM-DD."""
+    if valor is None or valor == "":
+        return ""
+    texto = str(valor).strip()
+    for fmt in ["%Y-%m-%d", "%d/%m/%Y", "%m/%d/%Y", "%d-%m-%Y"]:
+        try:
+            return datetime.strptime(texto, fmt).strftime("%Y-%m-%d")
+        except ValueError:
+            continue
+    return texto
+
 
 # ============ GESTIONAR VENDEDORES ============
 @app.route("/vendedores", methods=["GET", "POST", "DELETE"])

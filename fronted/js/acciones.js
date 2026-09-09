@@ -194,6 +194,11 @@ async function forzarSync() {
 
     if (btnSync.disabled) return;
 
+    // Si la página actual define una sincronización especial (ej: bancos), usarla
+    if (typeof sincronizarEspecial === "function") {
+        return sincronizarEspecial();
+    }
+
     btnSync.disabled = true;
     btnSync.textContent = "⏳";
 
@@ -214,6 +219,8 @@ async function forzarSync() {
             cargarMovimientos();
         } else if (typeof cargarAverias === "function") {
             cargarAverias();
+        } else if (typeof cargarMovimientosGlobales === "function") {
+            cargarMovimientosGlobales();
         }
     } catch (error) {
         console.error("[SYNC] Error al sincronizar:", error);
