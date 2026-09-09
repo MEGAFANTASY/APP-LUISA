@@ -7,7 +7,7 @@ import time
 import os
 import io
 import csv
-from datetime import datetime
+from datetime import datetime, timedelta
 
 try:
     import openpyxl
@@ -24,7 +24,7 @@ app = Flask(__name__, static_folder="../fronted")
 CORS(app)
 
 # URL por defecto (se puede sobreescribir vía /config o por el body en /test_gs)
-API_URL = "https://script.google.com/macros/s/AKfycbwSLQWgSxHy51_vVopRyKss0UlrqCuKpO8LhxaEBztzsk-Idc-_LnvjsT5dUEwTlb9r/exec"
+API_URL = "https://script.google.com/macros/s/AKfycbzmM4B_UucKMH6-OdCPJVAhz12WuXMwEPlw9Ui78ebMg31WZBBA1yBLKzb5VEHe-sy8/exec"
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_DIR = os.path.join(BASE_DIR, "..", "db")
 INTERVALO_SYNC = 600  # 10 minutos en segundos
@@ -608,47 +608,12 @@ def test_gs():
         return jsonify({"error": str(e)}), 500
 
 # ============ GESTIONAR BANCOS ============
+# NOTA: la web es la fuente de verdad. Google Sheets solo es respaldo.
+# Por eso ya no detectamos bancos desde Sheets, solo empujamos desde SQLite.
 @app.route("/bancos/detectar", methods=["POST"])
 def detectar_bancos_sheets():
-    """Lee la hoja 'bancos' de Google Sheets y crea localmente los bancos que no existan."""
-    modulo = MODULOS.get("bancos")
-    if not modulo:
-        return jsonify({"error": "Módulo bancos no configurado"}), 500
-
-    try:
-        respuesta = requests.get(API_URL, params={"hoja": modulo["hoja_sheets"]}, timeout=30)
-        print(f"[BANCOS DETECTAR] GET status={respuesta.status_code}")
-        if respuesta.status_code != 200 or "html" in respuesta.headers.get("content-type", "").lower():
-            return jsonify({"error": "No se pudo leer Google Sheets", "detalle": respuesta.text[:300]}), 500
-        resultado = respuesta.json()
-        if resultado.get("error"):
-            return jsonify({"error": resultado["error"]}), 500
-
-        bloques = resultado.get("bancos", [])
-        if not bloques:
-            return jsonify({"ok": True, "creados": 0, "mensaje": "No se encontraron bancos en Google Sheets"})
-
-        conn = get_db(modulo)
-        creados = 0
-        for bloque in bloques:
-            nombre = bloque.get("nombre", "").strip()
-            if not nombre.lower().startswith("banco_"):
-                continue
-            try:
-                cursor = conn.execute("INSERT INTO bancos_lista (nombre) VALUES (?)", (nombre,))
-                creados += 1
-                tabla = nombre_tabla_banco(nombre)
-                conn.execute(ESQUEMAS["bancos_movimientos"].format(nombre_tabla=tabla))
-            except sqlite3.IntegrityError:
-                # Ya existe, ignorar
-                pass
-        conn.commit()
-        conn.close()
-
-        return jsonify({"ok": True, "creados": creados, "bancos": [b["nombre"] for b in bloques]})
-    except Exception as e:
-        print(f"[BANCOS DETECTAR] Error: {e}")
-        return jsonify({"error": str(e)}), 500
+    """Endpoint mantenido por compatibilidad, pero no crea bancos desde Sheets."""
+    return jsonify({"ok": True, "creados": 0, "mensaje": "La web es la fuente de verdad. No se crean bancos desde Google Sheets."})
 
 
 @app.route("/bancos", methods=["GET", "POST", "DELETE"])
@@ -826,8 +791,7 @@ def importar_banco(nombre_banco):
     if not filas:
         return jsonify({"error": "El archivo no contiene datos"}), 400
 
-    conn, tabla = get_db_banco(nombre_banco)
-    insertados = 0
+    registros = []
     errores = []
 
     for fila in filas:
@@ -840,26 +804,37 @@ def importar_banco(nombre_banco):
             if not fecha or not descripcion:
                 continue
 
-            # Siempre subir Identificación vacía; se identifica dentro de la app
-            cursor = conn.execute(
-                f"INSERT INTO {tabla} (fecha, descripcion, monto, identificacion) VALUES (?, ?, ?, ?)",
-                (fecha, descripcion, monto, "")
-            )
-            insertados += 1
+            registros.append((fecha, descripcion, monto, ""))
         except Exception as e:
             errores.append(str(e))
 
-    conn.commit()
-    conn.close()
+    insertados = 0
+    if registros:
+        conn, tabla = get_db_banco(nombre_banco)
+        conn.executemany(
+            f"INSERT INTO {tabla} (fecha, descripcion, monto, identificacion) VALUES (?, ?, ?, ?)",
+            registros
+        )
+        conn.commit()
+        insertados = len(registros)
+        conn.close()
 
-    # Sincronizar automáticamente con Google Sheets
-    sincronizar_bancos()
+    # Sincronizar automáticamente con Google Sheets en segundo plano
+    if insertados > 0:
+        def sync_en_fondo():
+            try:
+                print(f"[IMPORT] Iniciando sincronización en segundo plano para {nombre_banco}")
+                sincronizar_bancos()
+                print(f"[IMPORT] Sincronización en segundo plano finalizada para {nombre_banco}")
+            except Exception as e:
+                print(f"[IMPORT] Error en sincronización en segundo plano: {e}")
+        threading.Thread(target=sync_en_fondo, daemon=True).start()
 
     return jsonify({
         "ok": True,
         "insertados": insertados,
         "errores": errores,
-        "mensaje": f"{insertados} movimientos importados y sincronizados"
+        "mensaje": f"{insertados} movimientos importados"
     })
 
 
@@ -871,34 +846,34 @@ def leer_csv(contenido):
 
 
 def leer_xlsx(contenido):
-    """Lee un archivo XLSX y devuelve lista de diccionarios con las columnas esperadas."""
-    if openpyxl is None:
-        raise Exception("openpyxl no está instalado")
+    """Lee un archivo XLSX con pandas para velocidad y devuelve lista de diccionarios."""
+    if pd is None:
+        raise Exception("pandas no está instalado")
 
-    wb = openpyxl.load_workbook(filename=io.BytesIO(contenido), data_only=True)
-    hoja = wb.active
-    filas = []
-
-    encabezados = [str(c.value or "").strip() for c in hoja[1]]
-    if "Fecha" not in encabezados or "Descripción" not in encabezados:
+    df = pd.read_excel(io.BytesIO(contenido), engine="openpyxl")
+    df.columns = [str(c).strip() for c in df.columns]
+    if "Fecha" not in df.columns or "Descripción" not in df.columns:
         raise Exception("El Excel no tiene las columnas Fecha y Descripción")
 
-    for fila in hoja.iter_rows(min_row=2, values_only=True):
-        if all(v is None or str(v).strip() == "" for v in fila):
-            continue
-        datos = {}
-        for i, encabezado in enumerate(encabezados):
-            if i < len(fila):
-                datos[encabezado] = fila[i]
-        filas.append(datos)
-
+    df = df.replace({pd.NA: None, pd.NaT: None})
+    filas = df.to_dict(orient="records")
     return filas
 
 
 def normalizar_fecha(valor):
-    """Convierte una fecha a formato YYYY-MM-DD, ignorando hora si viene."""
+    """Convierte una fecha a formato YYYY-MM-DD, ignorando hora si viene.
+    Soporta fechas Excel serial (número entero/float)."""
     if valor is None or valor == "":
         return ""
+
+    # Si es número (fecha serial de Excel), convertir a fecha real
+    if isinstance(valor, (int, float)) and valor > 0:
+        try:
+            # Excel cuenta días desde 1899-12-30; ajustamos con 0 si es la convención
+            return (datetime(1899, 12, 30) + timedelta(days=int(valor))).strftime("%Y-%m-%d")
+        except Exception:
+            pass
+
     texto = str(valor).strip()
 
     # Si viene con hora tipo "7/09/2026  5:00:00 a.m.", separar la parte de fecha
@@ -969,5 +944,5 @@ if __name__ == "__main__":
     print(f"📦 Módulos activos: {', '.join(MODULOS.keys())}")
     # Primera sincronización al arrancar (por si quedó algo pendiente de antes)
     sincronizar_pendientes()
-    app.run(host="0.0.0.0", port=5000, debug=True, use_reloader=False)
+    app.run(host="0.0.0.0", port=5000, debug=False, use_reloader=False)
 

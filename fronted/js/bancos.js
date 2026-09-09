@@ -40,12 +40,21 @@ document.addEventListener("DOMContentLoaded", () => {
 
     // Modal identificación
     document.getElementById("btnCancelarIdentificar").addEventListener("click", cerrarModalIdentificar);
-    document.getElementById("btnConfirmarIdentificar").addEventListener("click", confirmarIdentificar);
     document.getElementById("modalIdentificarFondo").addEventListener("click", (e) => {
         if (e.target.id === "modalIdentificarFondo") cerrarModalIdentificar();
     });
     document.getElementById("inputMotivoIdentificar").addEventListener("keydown", (e) => {
-        if (e.key === "Enter") confirmarIdentificar();
+        if (e.key === "Enter" && e.target.value.trim()) {
+            e.preventDefault();
+            confirmarIdentificar();
+        } else if (e.key === "Escape") {
+            cerrarModalIdentificar();
+        }
+    });
+    document.getElementById("inputMotivoIdentificar").addEventListener("input", (e) => {
+        if (e.target.value.trim()) {
+            confirmarIdentificar();
+        }
     });
 
     document.getElementById("modalBancoFondo").addEventListener("click", (e) => {
@@ -324,9 +333,11 @@ async function importarArchivo(archivo, nombreBanco) {
             alert("Error: " + resultado.error);
             return;
         }
-        alert(`${resultado.insertados} movimientos importados y sincronizados`);
+        alert(`${resultado.insertados} movimientos importados. Se sincronizarán en segundo plano.`);
         await cargarMovimientos(nombreBanco);
         renderizarContenidoBanco(nombreBanco);
+        // Lanzar sync manual silencioso después de unos segundos
+        setTimeout(() => sincronizarSilenciosa(), 2000);
     } catch (error) {
         console.error("Error al importar:", error);
         alert("Error al importar el archivo");
@@ -433,15 +444,16 @@ function cerrarModalIdentificar() {
 async function confirmarIdentificar() {
     if (!movimientoIdentificando) return;
     const { mov, nombreBanco, celda } = movimientoIdentificando;
-    const motivo = document.getElementById("inputMotivoIdentificar").value.trim();
-    if (!motivo) {
-        alert("Escribe el motivo de identificación");
-        return;
-    }
+    const input = document.getElementById("inputMotivoIdentificar");
+    const motivo = input.value.trim();
+    if (!motivo) return;
 
-    document.getElementById("btnConfirmarIdentificar").textContent = "⏳";
+    // Evitar múltiples envíos simultáneos
+    if (input.dataset.guardando === "1") return;
+    input.dataset.guardando = "1";
+
     await guardarIdentificacion(mov, nombreBanco, motivo);
-    document.getElementById("btnConfirmarIdentificar").textContent = "Guardar";
+    input.dataset.guardando = "";
     cerrarModalIdentificar();
 }
 
