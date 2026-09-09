@@ -177,7 +177,7 @@ function manejarBanco(hoja, nombreBanco, accion, id, datos) {
 
   if (filaExistente > 0) {
     for (let i = 0; i < COLUMNAS_BANCO.length; i++) {
-      hoja.getRange(filaExistente, bloque.colInicio + i).setValue(valores[i]);
+      hoja.getRange(filaExistente, bloque.colInicio + i + 1).setValue(valores[i]);
     }
     return responderJSON({ ok: true, mensaje: "Registro actualizado" });
   }
@@ -194,7 +194,7 @@ function manejarBanco(hoja, nombreBanco, accion, id, datos) {
   }
 
   for (let i = 0; i < COLUMNAS_BANCO.length; i++) {
-    hoja.getRange(filaDestino, bloque.colInicio + i).setValue(valores[i]);
+    hoja.getRange(filaDestino, bloque.colInicio + i + 1).setValue(valores[i]);
   }
 
   return responderJSON({ ok: true, mensaje: "Registro guardado correctamente" });

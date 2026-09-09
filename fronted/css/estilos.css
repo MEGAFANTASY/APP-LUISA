@@ -665,6 +665,11 @@ input:checked + .slider:before {
     font-weight: 600;
 }
 
+.monto-negativo {
+    color: #e74c3c;
+    font-weight: 700;
+}
+
 /* ============ MODAL GRANDE ============ */
 .modal-grande {
     max-width: 800px;

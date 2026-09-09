@@ -218,11 +218,13 @@ function renderizarContenidoBanco(nombre) {
             return fb - fa;
         });
         listaOrdenada.forEach(mov => {
+            const montoNum = parseInt(mov.Monto) || 0;
+            const claseMonto = montoNum < 0 ? "monto-negativo" : "";
             const tr = document.createElement("tr");
             tr.innerHTML = `
                 <td>${escaparHtml(mov.Fecha)}</td>
                 <td>${escaparHtml(mov["Descripción"])}</td>
-                <td>$${formatearMonto(mov.Monto)}</td>
+                <td class="${claseMonto}">$${formatearMonto(mov.Monto)}</td>
                 <td class="editable editable-identificacion" title="Haz clic para identificar">${escaparHtml(mov["Identificación"])}</td>
                 <td class="col-menu"></td>
             `;

@@ -896,11 +896,16 @@ def leer_xlsx(contenido):
 
 
 def normalizar_fecha(valor):
-    """Convierte una fecha a formato YYYY-MM-DD."""
+    """Convierte una fecha a formato YYYY-MM-DD, ignorando hora si viene."""
     if valor is None or valor == "":
         return ""
     texto = str(valor).strip()
-    for fmt in ["%Y-%m-%d", "%d/%m/%Y", "%m/%d/%Y", "%d-%m-%Y"]:
+
+    # Si viene con hora tipo "7/09/2026  5:00:00 a.m.", separar la parte de fecha
+    if " " in texto:
+        texto = texto.split(" ")[0]
+
+    for fmt in ["%Y-%m-%d", "%d/%m/%Y", "%m/%d/%Y", "%d-%m-%Y", "%d/%m/%y", "%m/%d/%y"]:
         try:
             return datetime.strptime(texto, fmt).strftime("%Y-%m-%d")
         except ValueError:
