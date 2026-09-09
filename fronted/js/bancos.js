@@ -3,7 +3,7 @@ const NOMBRE_HOJA = "bancos";
 let bancos = [];             // Lista de bancos { id, nombre }
 let bancoActivo = null;      // Nombre del banco seleccionado
 let movimientos = {};        // { nombreBanco: [movimientos] }
-let tabActiva = "sinIdentificar"; // 'sinIdentificar' o 'identificada'
+let tabActiva = "completo"; // 'completo' o 'sinIdentificar'
 let movimientoIdentificando = null; // { mov, nombreBanco, nuevoValor, celda }
 let bancoBorrando = null;    // id del banco a borrar
 
@@ -101,7 +101,10 @@ function renderizarTabs() {
             <button class="btn-eliminar-tab" title="Eliminar banco">×</button>
         `;
 
-        tab.querySelector(".tab-nombre").addEventListener("click", () => seleccionarBanco(b.nombre));
+        tab.addEventListener("click", (e) => {
+            if (e.target.closest(".btn-eliminar-tab")) return;
+            seleccionarBanco(b.nombre);
+        });
         tab.querySelector(".btn-eliminar-tab").addEventListener("click", (e) => {
             e.stopPropagation();
             abrirModalBorrarBanco(b);
@@ -208,7 +211,13 @@ function renderizarContenidoBanco(nombre) {
     if (listaMostrar.length > 0) {
         const tbody = document.getElementById("tablaMovimientos");
         tbody.innerHTML = "";
-        listaMostrar.forEach(mov => {
+        // Fecha más nueva arriba, más vieja abajo
+        const listaOrdenada = [...listaMostrar].sort((a, b) => {
+            const fa = new Date(a.Fecha + "T00:00:00");
+            const fb = new Date(b.Fecha + "T00:00:00");
+            return fb - fa;
+        });
+        listaOrdenada.forEach(mov => {
             const tr = document.createElement("tr");
             tr.innerHTML = `
                 <td>${escaparHtml(mov.Fecha)}</td>
@@ -508,9 +517,23 @@ async function guardarBanco() {
 
 // ============ MODAL BORRAR BANCO ============
 function abrirModalBorrarBanco(banco) {
-    bancoBorrando = banco.id;
+    bancoBorrando = banco;
     document.getElementById("nombreBancoBorrar").textContent = escaparHtml(banco.nombre);
+    document.getElementById("textoVerificarBorrar").textContent = escaparHtml(banco.nombre);
+    const input = document.getElementById("inputVerificarBorrarBanco");
+    input.value = "";
+    input.dataset.nombre = banco.nombre;
+    input.addEventListener("input", actualizarBotonBorrarBanco);
+    document.getElementById("btnConfirmarBorrarBanco").disabled = true;
     document.getElementById("modalBorrarBancoFondo").classList.add("abierto");
+    setTimeout(() => input.focus(), 100);
+}
+
+function actualizarBotonBorrarBanco(e) {
+    const input = e.target;
+    const nombreEsperado = input.dataset.nombre || "";
+    const coincide = input.value.trim().toLowerCase() === nombreEsperado.toLowerCase();
+    document.getElementById("btnConfirmarBorrarBanco").disabled = !coincide;
 }
 
 function cerrarModalBorrarBanco() {
@@ -520,11 +543,16 @@ function cerrarModalBorrarBanco() {
 
 async function confirmarBorrarBanco() {
     if (!bancoBorrando) return;
+    const input = document.getElementById("inputVerificarBorrarBanco");
+    if (input.value.trim().toLowerCase() !== bancoBorrando.nombre.toLowerCase()) {
+        alert("El nombre no coincide. Escribe exactamente el nombre del banco.");
+        return;
+    }
     try {
         const respuesta = await fetch("/bancos", {
             method: "DELETE",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ id: bancoBorrando })
+            body: JSON.stringify({ id: bancoBorrando.id })
         });
         const resultado = await respuesta.json();
         if (resultado.error) {

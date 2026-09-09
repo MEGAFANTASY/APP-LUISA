@@ -735,7 +735,7 @@ def movimientos_banco(nombre_banco):
     if request.method == "GET":
         conn, tabla = get_db_banco(nombre_banco)
         filas = conn.execute(
-            f"SELECT * FROM {tabla} WHERE borrado = 0 ORDER BY fecha DESC, id DESC"
+            f"SELECT * FROM {tabla} WHERE borrado = 0 ORDER BY fecha ASC, id ASC"
         ).fetchall()
         conn.close()
         datos = []
@@ -834,16 +834,16 @@ def importar_banco(nombre_banco):
         try:
             fecha = normalizar_fecha(fila.get("Fecha", ""))
             descripcion = str(fila.get("Descripción", "")).strip()
-            referencia = str(fila.get("Referencia", "")).strip()
             valor = fila.get("Valor", fila.get("Monto", 0))
             monto = int(float(str(valor).replace(",", "").replace("$", "")) or 0)
 
             if not fecha or not descripcion:
                 continue
 
+            # Siempre subir Identificación vacía; se identifica dentro de la app
             cursor = conn.execute(
                 f"INSERT INTO {tabla} (fecha, descripcion, monto, identificacion) VALUES (?, ?, ?, ?)",
-                (fecha, descripcion, monto, referencia)
+                (fecha, descripcion, monto, "")
             )
             insertados += 1
         except Exception as e:

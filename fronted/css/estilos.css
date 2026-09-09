@@ -767,7 +767,6 @@ input:checked + .slider:before {
 }
 
 .tab-nombre {
-    pointer-events: none;
     text-transform: lowercase;
 }
 

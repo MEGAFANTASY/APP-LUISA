@@ -36,10 +36,10 @@
             <!-- Se generan dinámicamente -->
         </div>
 
-        <!-- Pestañas internas: Sin identificar / Banco completo -->
+        <!-- Pestañas internas: Banco completo / Sin identificar -->
         <div class="tabs-internas" id="tabsInternas" style="display:none;">
-            <button class="tab-interna activa" data-tab="sinIdentificar">Sin identificar</button>
-            <button class="tab-interna" data-tab="completo">Banco completo</button>
+            <button class="tab-interna activa" data-tab="completo">Banco completo</button>
+            <button class="tab-interna" data-tab="sinIdentificar">Sin identificar</button>
         </div>
 
         <!-- Contenido de cada banco -->
@@ -69,9 +69,13 @@
         <div class="modal">
             <h3>¿Eliminar banco?</h3>
             <p class="modal-texto-borrar">Se borrará el banco <strong id="nombreBancoBorrar"></strong> y todos sus movimientos.</p>
+            <div class="form-grupo">
+                <label for="inputVerificarBorrarBanco">Para eliminar el banco, por favor escribe <strong id="textoVerificarBorrar"></strong></label>
+                <input type="text" id="inputVerificarBorrarBanco" placeholder="Escribe el nombre del banco">
+            </div>
             <div class="modal-botones">
                 <button class="btn-cancelar" id="btnCancelarBorrarBanco">Cancelar</button>
-                <button class="btn-borrar-confirmar" id="btnConfirmarBorrarBanco">Eliminar</button>
+                <button class="btn-borrar-confirmar" id="btnConfirmarBorrarBanco" disabled>Eliminar</button>
             </div>
         </div>
     </div>
